@@ -1,14 +1,24 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
+import { homes } from './routes/homes'
 import type { AppEnv } from './types'
 
 const app = new Hono<AppEnv>()
 
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
+
 app.get('/api/health', (c) => c.json({ status: 'ok' }))
 
-// Every thrown error ends up here and leaves the API as `{ error: message }`.
+app.route('/api', homes)
+
+// ---------------------------------------------------------------------------
+// Error handling: every error leaves the API as `{ error: message }`
+// ---------------------------------------------------------------------------
+
 app.onError((err, c) => {
-  // Errors we threw on purpose (404, 422, ...): safe to show the message.
+  // Errors threw on purpose (400, 404, 409, 422): safe to show the message.
   if (err instanceof HTTPException) {
     return c.json({ error: err.message }, err.status)
   }
