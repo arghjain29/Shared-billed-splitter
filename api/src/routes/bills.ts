@@ -1,11 +1,9 @@
 import { Hono } from 'hono'
 import { badRequest, conflict, notFound } from '../lib/errors'
-import { type AppEnv, type ShareRow, toShareResponse } from '../types'
+import { toShareResponse } from '../lib/mappers'
+import type { AppEnv, IdRow, PaidShareRow, ShareRow } from '../types'
 
 export const bills = new Hono<AppEnv>()
-
-// Same columns as ShareRow, plus the key that paid it.
-type PaidShareRow = ShareRow & { idempotency_key: string | null }
 
 bills.post('/bills/:billId/shares/:shareId/pay', async (c) => {
   const db = c.env.DB
@@ -50,7 +48,7 @@ bills.post('/bills/:billId/shares/:shareId/pay', async (c) => {
 
   if (!existing) {
     // Say which one is missing: the bill, or the share on that bill.
-    const bill = await db.prepare('SELECT id FROM bills WHERE id = ?').bind(billId).first()
+    const bill = await db.prepare('SELECT id FROM bills WHERE id = ?').bind(billId).first<IdRow>()
     throw notFound(bill ? 'Share' : 'Bill')
   }
 

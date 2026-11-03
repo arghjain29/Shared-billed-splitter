@@ -4,7 +4,14 @@ import { notFound, unprocessable } from '../lib/errors'
 import { readJson } from '../lib/http'
 import { splitCents } from '../lib/split'
 import { parse } from '../lib/validate'
-import type { AppEnv, ShareResponse } from '../types'
+import type {
+  AppEnv,
+  BillResponse,
+  HomeResponse,
+  IdRow,
+  MemberResponse,
+  ShareResponse,
+} from '../types'
 
 export const homes = new Hono<AppEnv>()
 
@@ -38,7 +45,7 @@ const createBillSchema = z.object({
 
 /** Throws a 404 if the home does not exist. */
 async function requireHome(db: D1Database, homeId: string): Promise<void> {
-  const home = await db.prepare('SELECT id FROM homes WHERE id = ?').bind(homeId).first()
+  const home = await db.prepare('SELECT id FROM homes WHERE id = ?').bind(homeId).first<IdRow>()
   if (!home) {
     throw notFound('Home')
   }
@@ -57,7 +64,8 @@ homes.post('/homes', async (c) => {
     .bind(id, name, createdAt)
     .run()
 
-  return c.json({ id, name }, 201)
+  const response: HomeResponse = { id, name }
+  return c.json(response, 201)
 })
 
 homes.post('/homes/:homeId/members', async (c) => {
@@ -72,7 +80,8 @@ homes.post('/homes/:homeId/members', async (c) => {
     .bind(id, homeId, name, createdAt)
     .run()
 
-  return c.json({ id, homeId, name }, 201)
+  const response: MemberResponse = { id, homeId, name }
+  return c.json(response, 201)
 })
 
 homes.post('/homes/:homeId/bills', async (c) => {
@@ -86,7 +95,7 @@ homes.post('/homes/:homeId/bills', async (c) => {
   const { results: members } = await db
     .prepare('SELECT id FROM members WHERE home_id = ? ORDER BY seq')
     .bind(homeId)
-    .all<{ id: string }>()
+    .all<IdRow>()
   if (members.length === 0) {
     throw unprocessable('Home has no members')
   }
@@ -125,5 +134,6 @@ homes.post('/homes/:homeId/bills', async (c) => {
 
   await db.batch(statements)
 
-  return c.json({ id: billId, homeId, title, totalCents, shares }, 201)
+  const response: BillResponse = { id: billId, homeId, title, totalCents, shares }
+  return c.json(response, 201)
 })
