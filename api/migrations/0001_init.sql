@@ -56,9 +56,10 @@ CREATE TABLE shares (
         (paid_at IS NULL AND idempotency_key IS NULL) OR
         (paid_at IS NOT NULL AND idempotency_key IS NOT NULL)
     ),
+    -- ISO shape like 2026-11-03T10:00:00.000Z (D1 caps LIKE/GLOB patterns at 50 bytes)
     CONSTRAINT chk_shares_paid_at_format CHECK (
         paid_at IS NULL OR
-        paid_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9][0-9][0-9]Z'
+        paid_at LIKE '____-__-__T__:__:__.___Z'
     )
 );
 CREATE INDEX idx_shares_member_id ON shares(member_id);
