@@ -35,6 +35,13 @@ export type PaidShareRow = ShareRow & {
   idempotency_key: string | null
 }
 
+/** One row of the balances query: a member and their unpaid total. */
+export type BalanceRow = {
+  member_id: string
+  name: string
+  outstanding_cents: number
+}
+
 // ---------------------------------------------------------------------------
 // API responses: camelCase, exactly what clients receive
 // ---------------------------------------------------------------------------
@@ -67,4 +74,16 @@ export type BillResponse = {
   title: string
   totalCents: number
   shares: ShareResponse[]
+}
+
+/** One member's line in the balances list. */
+export type BalanceResponse = {
+  memberId: string
+  name: string
+  outstandingCents: number
+}
+
+/** GET /api/homes/:homeId/balances */
+export type BalancesResponse = {
+  balances: BalanceResponse[]
 }

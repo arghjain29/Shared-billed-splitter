@@ -12,9 +12,9 @@ const app = new Hono<AppEnv>()
 
 app.get('/api/health', (c) => c.json({ status: 'ok' }))
 
-// /api/homes/...  homes, members, bills (create), balances
+// Homes, members, balances
 app.route('/api', homes)
-// /api/bills/...  pay a share
+// Create a bill (POST /api/homes/:homeId/bills), pay a share
 app.route('/api', bills)
 
 // ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ app.route('/api', bills)
 // ---------------------------------------------------------------------------
 
 app.onError((err, c) => {
-  // Errors threw on purpose (400, 404, 409, 422): safe to show the message.
+  // Errors thrown on purpose (400, 404, 409, 422): safe to show the message.
   if (err instanceof HTTPException) {
     return c.json({ error: err.message }, err.status)
   }

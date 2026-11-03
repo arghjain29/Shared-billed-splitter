@@ -1,18 +1,12 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { notFound, unprocessable } from '../lib/errors'
+import { requireHome } from '../lib/db'
 import { readJson } from '../lib/http'
-import { splitCents } from '../lib/split'
+import { toBalanceResponse } from '../lib/mappers'
 import { parse } from '../lib/validate'
-import type {
-  AppEnv,
-  BillResponse,
-  HomeResponse,
-  IdRow,
-  MemberResponse,
-  ShareResponse,
-} from '../types'
+import type { AppEnv, BalanceRow, BalancesResponse, HomeResponse, MemberResponse } from '../types'
 
+// Homes, their members, and what each member owes.
 export const homes = new Hono<AppEnv>()
 
 // ---------------------------------------------------------------------------
@@ -27,40 +21,19 @@ const nameSchema = z.object({
     .max(100, { message: 'Name must be at most 100 characters' }),
 })
 
-const createBillSchema = z.object({
-  title: z
-    .string()
-    .trim()
-    .min(1, { message: 'Title is required' })
-    .max(100, { message: 'Title must be at most 100 characters' }),
-  totalCents: z
-    .number({ message: 'totalCents must be a number' })
-    .int({ message: 'totalCents must be a whole number of cents' })
-    .positive({ message: 'totalCents must be greater than 0' }),
-})
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Throws a 404 if the home does not exist. */
-async function requireHome(db: D1Database, homeId: string): Promise<void> {
-  const home = await db.prepare('SELECT id FROM homes WHERE id = ?').bind(homeId).first<IdRow>()
-  if (!home) {
-    throw notFound('Home')
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
 
+/** Create a home. */
 homes.post('/homes', async (c) => {
+  const db = c.env.DB
   const { name } = parse(nameSchema, await readJson(c))
   const id = crypto.randomUUID()
   const createdAt = new Date().toISOString()
 
-  await c.env.DB.prepare('INSERT INTO homes (id, name, created_at) VALUES (?, ?, ?)')
+  await db
+    .prepare('INSERT INTO homes (id, name, created_at) VALUES (?, ?, ?)')
     .bind(id, name, createdAt)
     .run()
 
@@ -68,15 +41,18 @@ homes.post('/homes', async (c) => {
   return c.json(response, 201)
 })
 
+/** Add a member to a home. Members get `seq` automatically, which records their order. */
 homes.post('/homes/:homeId/members', async (c) => {
+  const db = c.env.DB
   const homeId = c.req.param('homeId')
-  await requireHome(c.env.DB, homeId)
+  await requireHome(db, homeId)
 
   const { name } = parse(nameSchema, await readJson(c))
   const id = crypto.randomUUID()
   const createdAt = new Date().toISOString()
 
-  await c.env.DB.prepare('INSERT INTO members (id, home_id, name, created_at) VALUES (?, ?, ?, ?)')
+  await db
+    .prepare('INSERT INTO members (id, home_id, name, created_at) VALUES (?, ?, ?, ?)')
     .bind(id, homeId, name, createdAt)
     .run()
 
@@ -84,56 +60,31 @@ homes.post('/homes/:homeId/members', async (c) => {
   return c.json(response, 201)
 })
 
-homes.post('/homes/:homeId/bills', async (c) => {
+/**
+ * What each member still owes: the sum of their unpaid shares across all bills.
+ * Calculated from the shares on every request, so it can never drift out of sync.
+ */
+homes.get('/homes/:homeId/balances', async (c) => {
   const db = c.env.DB
   const homeId = c.req.param('homeId')
   await requireHome(db, homeId)
 
-  const { title, totalCents } = parse(createBillSchema, await readJson(c))
-
-  // Members in the order they were added: this order decides who gets the extra cents.
-  const { results: members } = await db
-    .prepare('SELECT id FROM members WHERE home_id = ? ORDER BY seq')
-    .bind(homeId)
-    .all<IdRow>()
-  if (members.length === 0) {
-    throw unprocessable('Home has no members')
-  }
-
-  const amounts = splitCents(totalCents, members.length)
-  const billId = crypto.randomUUID()
-  const createdAt = new Date().toISOString()
-
-  // The bill and all its shares go into ONE batch: all rows are saved, or none.
-  const statements: D1PreparedStatement[] = [
-    db
-      .prepare(
-        'INSERT INTO bills (id, home_id, title, total_cents, created_at) VALUES (?, ?, ?, ?, ?)',
-      )
-      .bind(billId, homeId, title, totalCents, createdAt),
-  ]
-  const shares: ShareResponse[] = []
-
-  for (let i = 0; i < members.length; i++) {
-    const member = members[i]
-    const amountCents = amounts[i]
-    if (member === undefined || amountCents === undefined) {
-      throw new Error('split length does not match member count') // cannot happen
-    }
-
-    const shareId = crypto.randomUUID()
-    statements.push(
-      db
-        .prepare(
-          'INSERT INTO shares (id, home_id, bill_id, member_id, amount_cents, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-        )
-        .bind(shareId, homeId, billId, member.id, amountCents, createdAt),
+  // LEFT JOIN keeps members who owe nothing. The `paid_at IS NULL` check sits in
+  // ON (not WHERE) so members whose shares are all paid are not dropped.
+  const { results } = await db
+    .prepare(
+      `SELECT m.id AS member_id,
+              m.name,
+              COALESCE(SUM(s.amount_cents), 0) AS outstanding_cents
+       FROM members m
+       LEFT JOIN shares s ON s.member_id = m.id AND s.paid_at IS NULL
+       WHERE m.home_id = ?
+       GROUP BY m.id
+       ORDER BY m.seq`,
     )
-    shares.push({ id: shareId, memberId: member.id, amountCents, paidAt: null })
-  }
+    .bind(homeId)
+    .all<BalanceRow>()
 
-  await db.batch(statements)
-
-  const response: BillResponse = { id: billId, homeId, title, totalCents, shares }
-  return c.json(response, 201)
+  const response: BalancesResponse = { balances: results.map(toBalanceResponse) }
+  return c.json(response, 200)
 })
