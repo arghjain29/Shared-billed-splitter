@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
+import { bills } from './routes/bills'
 import { homes } from './routes/homes'
 import type { AppEnv } from './types'
 
@@ -11,7 +12,10 @@ const app = new Hono<AppEnv>()
 
 app.get('/api/health', (c) => c.json({ status: 'ok' }))
 
+// /api/homes/...  homes, members, bills (create), balances
 app.route('/api', homes)
+// /api/bills/...  pay a share
+app.route('/api', bills)
 
 // ---------------------------------------------------------------------------
 // Error handling: every error leaves the API as `{ error: message }`

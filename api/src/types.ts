@@ -3,3 +3,35 @@
 export type AppEnv = {
   Bindings: Env
 }
+
+// ---------------------------------------------------------------------------
+// Response types
+// ---------------------------------------------------------------------------
+
+export type ShareResponse = {
+  id: string
+  memberId: string
+  amountCents: number
+  paidAt: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Database row types (snake_case, as stored)
+// ---------------------------------------------------------------------------
+
+export type ShareRow = {
+  id: string
+  member_id: string
+  amount_cents: number
+  paid_at: string | null
+}
+
+/** The one place a share row (snake_case) becomes an API response (camelCase). */
+export function toShareResponse(row: ShareRow): ShareResponse {
+  return {
+    id: row.id,
+    memberId: row.member_id,
+    amountCents: row.amount_cents,
+    paidAt: row.paid_at,
+  }
+}

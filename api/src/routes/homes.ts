@@ -4,7 +4,7 @@ import { notFound, unprocessable } from '../lib/errors'
 import { readJson } from '../lib/http'
 import { splitCents } from '../lib/split'
 import { parse } from '../lib/validate'
-import type { AppEnv } from '../types'
+import type { AppEnv, ShareResponse } from '../types'
 
 export const homes = new Hono<AppEnv>()
 
@@ -31,17 +31,6 @@ const createBillSchema = z.object({
     .int({ message: 'totalCents must be a whole number of cents' })
     .positive({ message: 'totalCents must be greater than 0' }),
 })
-
-// ---------------------------------------------------------------------------
-// Response types
-// ---------------------------------------------------------------------------
-
-type ShareResponse = {
-  id: string
-  memberId: string
-  amountCents: number
-  paidAt: string | null
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
