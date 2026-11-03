@@ -1,4 +1,11 @@
-import type { BalanceResponse, BalanceRow, ShareResponse, ShareRow } from '../types'
+import type {
+  BalanceResponse,
+  BalanceRow,
+  BillShareResponse,
+  BillShareRow,
+  ShareResponse,
+  ShareRow,
+} from '../types'
 
 // Converts database rows (snake_case) into API responses (camelCase).
 // Every row-to-response conversion lives here, so the two shapes never mix.
@@ -10,6 +17,11 @@ export function toShareResponse(row: ShareRow): ShareResponse {
     amountCents: row.amount_cents,
     paidAt: row.paid_at,
   }
+}
+
+export function toBillShareResponse(row: BillShareRow): BillShareResponse {
+  // Same fields as a normal share, plus the member's name.
+  return { ...toShareResponse(row), memberName: row.member_name }
 }
 
 export function toBalanceResponse(row: BalanceRow): BalanceResponse {

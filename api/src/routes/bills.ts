@@ -3,12 +3,23 @@ import { z } from 'zod'
 import { requireHome } from '../lib/db'
 import { badRequest, conflict, notFound, unprocessable } from '../lib/errors'
 import { readJson } from '../lib/http'
-import { toShareResponse } from '../lib/mappers'
+import { toBillShareResponse, toShareResponse } from '../lib/mappers'
 import { splitCents } from '../lib/split'
 import { parse } from '../lib/validate'
-import type { AppEnv, BillResponse, IdRow, PaidShareRow, ShareResponse, ShareRow } from '../types'
+import type {
+  AppEnv,
+  BillResponse,
+  BillRow,
+  BillShareResponse,
+  BillShareRow,
+  BillsResponse,
+  IdRow,
+  PaidShareRow,
+  ShareResponse,
+  ShareRow,
+} from '../types'
 
-// Bills: create a bill split between members, and pay a share.
+// Bills: create a bill split between members, list bills, and pay a share.
 export const bills = new Hono<AppEnv>()
 
 // ---------------------------------------------------------------------------
@@ -85,6 +96,58 @@ bills.post('/homes/:homeId/bills', async (c) => {
 
   const response: BillResponse = { id: billId, homeId, title, totalCents, shares }
   return c.json(response, 201)
+})
+
+/**
+ * List a home's bills (newest first), each with its shares in member order.
+ * Uses 2 queries in total (bills, then all their shares), not one query per bill.
+ */
+bills.get('/homes/:homeId/bills', async (c) => {
+  const db = c.env.DB
+  const homeId = c.req.param('homeId')
+  await requireHome(db, homeId)
+
+  // 1. All bills of the home. rowid grows with each insert, so it can't tie like a timestamp.
+  const { results: billRows } = await db
+    .prepare(
+      `SELECT id, title, total_cents
+       FROM bills
+       WHERE home_id = ?
+       ORDER BY rowid DESC`,
+    )
+    .bind(homeId)
+    .all<BillRow>()
+
+  // 2. All shares of the home at once, with member names, in member order.
+  const { results: shareRows } = await db
+    .prepare(
+      `SELECT s.id, s.bill_id, s.member_id, m.name AS member_name, s.amount_cents, s.paid_at
+       FROM shares s
+       JOIN members m ON m.id = s.member_id
+       WHERE s.home_id = ?
+       ORDER BY m.seq`,
+    )
+    .bind(homeId)
+    .all<BillShareRow>()
+
+  // 3. Group the shares by bill. Rows arrive in member order, so each list stays in that order.
+  const sharesByBill = new Map<string, BillShareResponse[]>()
+  for (const row of shareRows) {
+    const list = sharesByBill.get(row.bill_id) ?? []
+    list.push(toBillShareResponse(row))
+    sharesByBill.set(row.bill_id, list)
+  }
+
+  const response: BillsResponse = {
+    bills: billRows.map((bill) => ({
+      id: bill.id,
+      homeId,
+      title: bill.title,
+      totalCents: bill.total_cents,
+      shares: sharesByBill.get(bill.id) ?? [],
+    })),
+  }
+  return c.json(response, 200)
 })
 
 /**

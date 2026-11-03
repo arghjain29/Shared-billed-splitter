@@ -35,6 +35,19 @@ export type PaidShareRow = ShareRow & {
   idempotency_key: string | null
 }
 
+/** One bill in the list-bills query. */
+export type BillRow = {
+  id: string
+  title: string
+  total_cents: number
+}
+
+/** A share in the list-bills query: which bill it belongs to, plus the member's name. */
+export type BillShareRow = ShareRow & {
+  bill_id: string
+  member_name: string
+}
+
 /** One row of the balances query: a member and their unpaid total. */
 export type BalanceRow = {
   member_id: string
@@ -74,6 +87,25 @@ export type BillResponse = {
   title: string
   totalCents: number
   shares: ShareResponse[]
+}
+
+/** A share in the bills list: a normal share plus the member's name for display. */
+export type BillShareResponse = ShareResponse & {
+  memberName: string
+}
+
+/** One bill in the bills list, with its shares in member order. */
+export type BillWithSharesResponse = {
+  id: string
+  homeId: string
+  title: string
+  totalCents: number
+  shares: BillShareResponse[]
+}
+
+/** GET /api/homes/:homeId/bills */
+export type BillsResponse = {
+  bills: BillWithSharesResponse[]
 }
 
 /** One member's line in the balances list. */
