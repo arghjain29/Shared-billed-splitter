@@ -1,4 +1,4 @@
-import type { BillsResponse, Result, Share } from './types'
+import type { BalancesResponse, BillsResponse, Home, Member, Result, Share } from './types'
 
 // Give up on a request after this long, so a slow API can't leave the page stuck.
 const TIMEOUT_MS = 8000
@@ -49,12 +49,25 @@ function errorMessage(body: unknown): string | undefined {
   return undefined
 }
 
+/** POST with a JSON body. */
+function postJson<T>(path: string, body: unknown): Promise<Result<T>> {
+  return request<T>(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
 // ---------------------------------------------------------------------------
 // API calls used by the page
 // ---------------------------------------------------------------------------
 
 export function getBills(homeId: string): Promise<Result<BillsResponse>> {
   return request<BillsResponse>(`/api/homes/${encodeURIComponent(homeId)}/bills`)
+}
+
+export function getBalances(homeId: string): Promise<Result<BalancesResponse>> {
+  return request<BalancesResponse>(`/api/homes/${encodeURIComponent(homeId)}/balances`)
 }
 
 /**
@@ -71,4 +84,34 @@ export function payShare(
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },
   })
+}
+
+// ---------------------------------------------------------------------------
+// Demo data (used by the "Create demo home" button)
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates a home with 3 members and 2 bills through the normal API,
+ * and returns the new home's id.
+ */
+export async function createDemoHome(): Promise<Result<string>> {
+  const home = await postJson<Home>('/api/homes', { name: 'Demo flat' })
+  if (!home.ok) return home
+
+  const homeId = encodeURIComponent(home.data.id)
+  for (const name of ['Asha', 'Ben', 'Chitra']) {
+    const member = await postJson<Member>(`/api/homes/${homeId}/members`, { name })
+    if (!member.ok) return member
+  }
+
+  // 1000 does not divide by 3, so the demo shows the extra cent going to the first member.
+  for (const bill of [
+    { title: 'Electricity', totalCents: 1000 },
+    { title: 'Internet', totalCents: 4500 },
+  ]) {
+    const created = await postJson<unknown>(`/api/homes/${homeId}/bills`, bill)
+    if (!created.ok) return created
+  }
+
+  return { ok: true, data: home.data.id }
 }
