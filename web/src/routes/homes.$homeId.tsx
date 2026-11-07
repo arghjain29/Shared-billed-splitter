@@ -68,15 +68,24 @@ function BillsPage() {
   // so retrying after a timeout reuses the key and can never pay twice.
   const payKeys = useRef(new Map<string, string>())
 
-  const load = useCallback(async () => {
-    const thisLoad = ++latestLoad.current
-    setPage({ status: 'loading' })
-    const res = await getBills(homeId)
-    if (thisLoad !== latestLoad.current) return // a newer load started; drop this one
-    setPage(
-      res.ok ? { status: 'ready', bills: res.data.bills } : { status: 'error', message: res.error },
-    )
-  }, [homeId])
+  /**
+   * Loads the bills. `showLoading: false` refreshes in the background
+   * so the page keeps showing the current bills until the new ones arrive.
+   */
+  const load = useCallback(
+    async (showLoading = true) => {
+      const thisLoad = ++latestLoad.current
+      if (showLoading) setPage({ status: 'loading' })
+      const res = await getBills(homeId)
+      if (thisLoad !== latestLoad.current) return // a newer load started; drop this one
+      setPage(
+        res.ok
+          ? { status: 'ready', bills: res.data.bills }
+          : { status: 'error', message: res.error },
+      )
+    },
+    [homeId],
+  )
 
   /**
    * Loads balances. `showLoading: false` refreshes in the background
@@ -122,6 +131,15 @@ function BillsPage() {
     const res = await payShare(billId, shareId, key)
 
     if (!res.ok) {
+      if (res.status === 409) {
+        // Someone else paid this share first. Our screen is out of date,
+        // so fetch the real state from the API instead of offering a retry that can't work.
+        payKeys.current.delete(shareId)
+        setPayState(shareId, IDLE)
+        void load(false)
+        void loadBalances(false)
+        return
+      }
       // Payment failed: the share stays unpaid on screen, and we show why.
       setPayState(shareId, { status: 'error', message: res.error })
       return
@@ -142,7 +160,7 @@ function BillsPage() {
   return (
     <main className="page">
       <p>
-        <Link to="/">← All homes</Link>
+        <Link to="/">← Back</Link>
       </p>
       <h1>Bills</h1>
 

@@ -1,7 +1,10 @@
 // Shapes the web page uses. Copied from api/src/types.ts (only what the page needs).
 
-/** Every API call returns this instead of throwing. Check `ok` before using `data`. */
-export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
+/**
+ * Every API call returns this instead of throwing. Check `ok` before using `data`.
+ * `status` is the HTTP status when the server answered (missing on timeout / no connection).
+ */
+export type Result<T> = { ok: true; data: T } | { ok: false; error: string; status?: number }
 
 /** POST /api/homes */
 export type Home = {

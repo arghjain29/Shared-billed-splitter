@@ -1,3 +1,4 @@
+import { exports } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
 import { type Balance, type Bill, call, createBill, createHome, type Share } from './helpers'
 
@@ -112,7 +113,6 @@ describe('2. invalid amounts and input', () => {
     const { homeId } = await createHome(['Asha'])
 
     // `call` always sends JSON, so build this request by hand.
-    const { exports } = await import('cloudflare:workers')
     const response = await exports.default.fetch(
       new Request(`http://localhost/api/homes/${homeId}/bills`, {
         method: 'POST',

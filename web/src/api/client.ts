@@ -31,10 +31,20 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<Result<
 
   // 3. Error status: use the API's `{ error }` message if there is one.
   if (!res.ok) {
-    return { ok: false, error: errorMessage(body) ?? `Server error (${res.status})` }
+    return {
+      ok: false,
+      error: errorMessage(body) ?? `Server error (${res.status})`,
+      status: res.status,
+    }
   }
 
-  // 4. Success. `as T`: we trust our own API's response shape.
+  // 4. A success status but no JSON object (e.g. an HTML page from a wrong server):
+  //    treat it as an error instead of letting the page read fields from nothing.
+  if (typeof body !== 'object' || body === null) {
+    return { ok: false, error: 'Unexpected response from the server.', status: res.status }
+  }
+
+  // 5. Success. `as T`: we trust our own API's response shape.
   return { ok: true, data: body as T }
 }
 

@@ -155,3 +155,19 @@ You must understand every line you submit. We check this with your video and in 
 5. Paste the repository link and the video link in the application form.
 
 We will run `pnpm install && pnpm check && pnpm typecheck && pnpm test` on your repository.
+
+## Decisions
+
+**1. Paying a share is one conditional `UPDATE`, not "read, then write".**
+The pay route runs `UPDATE shares SET paid_at = ?, idempotency_key = ? WHERE id = ? AND bill_id = ? AND paid_at IS NULL RETURNING ...`. The check ("is it unpaid?") and the write happen in a single SQL statement, so when two requests race, the database lets only one of them change the row. The loser sees 0 rows changed, then reads the share: if it was paid with the same `Idempotency-Key` it gets the stored result (`200`, same `paidAt`), otherwise `409`. The key is stored on the share row itself instead of in a separate table. That is enough because a share can only be paid once, and it keeps the payment and its key in one atomic write.
+
+**2. The database protects the data, not just the code.**
+The schema has named constraints for the rules that must never break: `CHECK`s for whole, positive totals and non-negative shares, a `CHECK` that `paid_at` and `idempotency_key` are set together, `UNIQUE (bill_id, member_id)`, and foreign keys on `(home_id, bill_id)` and `(home_id, member_id)` so a share can never link a bill and a member from different homes. A bill and all its shares are inserted in one `db.batch`, so a bill can never exist with only some of its shares. Zod validates input first to give clear `422` messages; the constraints are the backstop if a bug ever slips through.
+
+**3. Order and totals are never guessed from timestamps or stored copies.**
+Member order (who gets the extra cents, and the order of balances) comes from an `AUTOINCREMENT` `seq` column, because two members added in the same millisecond would tie on a timestamp. Balances are not stored: they are calculated on every request with one `LEFT JOIN` over unpaid shares, so they can never drift out of sync with the shares. The trade-off is one aggregate query per request, which is cheap at this size.
+
+Also worth knowing:
+- The web page never crashes on API errors: every request goes through one client that returns `{ ok, data } | { ok, error }` instead of throwing, with an 8 second timeout. A share is shown as paid only after the API answers `200`, and the idempotency key is kept until the payment succeeds, so a retry after a timeout can never pay twice.
+- Extra endpoint: `GET /api/homes/:homeId/bills` lists a home's bills with their shares (2 queries, not one per bill), for the web page.
+- Extra tests: `api/test/split.test.ts`, `list-bills.test.ts` and `edge-cases.test.ts` cover the "Cases you must handle", including concurrent payments.
